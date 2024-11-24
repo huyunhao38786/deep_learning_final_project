@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Read the updated dataset from the specified path
-dataset_path = '/home/yh2233/.cache/kagglehub/datasets/suraj520/music-dataset-song-information-and-lyrics/versions/1/music_dataset_with_strategies.csv'
+dataset_path = 'dataset/music_dataset_with_strategies.csv'
 
 # Load the dataset
 data = pd.read_csv(dataset_path)

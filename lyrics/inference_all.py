@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import nltk
 import random
+import openai
+from openai import OpenAI
 
+client = OpenAI()
 nltk.download('punkt')
 nltk.download('wordnet')
 nltk.download('omw-1.4')
@@ -20,6 +23,9 @@ print("Path to dataset files:", path)
 # List dataset files
 dataset_files = os.listdir(path)
 print("Dataset files:", dataset_files)
+
+DATASET_DIR = './dataset'
+os.makedirs(DATASET_DIR, exist_ok=True)
 
 # Find the CSV file in the downloaded dataset
 csv_files = [file for file in dataset_files if file.endswith('.csv')]
@@ -41,7 +47,7 @@ for col in required_columns:
 
 # Remove rows with missing values in required columns
 data = data.dropna(subset=required_columns)
-data = data.head(100)
+# data = data.head(100)
 
 # Clean the text in each column
 def clean_text(text):
@@ -50,6 +56,8 @@ def clean_text(text):
 for col in required_columns:
     data[col] = data[col].apply(clean_text)
 
+data = data.reset_index(drop=True)
+data = data.iloc[289:]
 
 # Load the tokenizer
 tokenizer = LlamaTokenizer.from_pretrained('fine-tuned-llama')
@@ -74,27 +82,75 @@ def compute_lcs(a, b):
     return match.size
 
 def paraphrase_text(text):
-    """Simulates paraphrasing by shuffling words in sentences."""
-    sentences = nltk.sent_tokenize(text)
-    paraphrased_sentences = []
-    for sentence in sentences:
-        words = nltk.word_tokenize(sentence)
-        random.shuffle(words)
-        paraphrased_sentence = ' '.join(words)
-        paraphrased_sentences.append(paraphrased_sentence)
-    return ' '.join(paraphrased_sentences)
+    """Use the OpenAI API to paraphrase the given text."""
+    if not text.strip():
+        return text  # If text is empty, return as is
+    
+    prompt = f"Paraphrase the following text in a coherent way:\n\n{text}"
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that paraphrases text."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7,
+        max_tokens=200
+    )
+    paraphrased = response.choices[0].message.content.strip()
+    return paraphrased
+
+def get_random_line_segment(lyrics, portion=0.3, from_start=True):
+    """Select a random non-empty line from the lyrics and return either the first or last portion% of it."""
+    lines = [line.strip() for line in lyrics.split('\n') if line.strip()]
+    if not lines:
+        return ""  # If no lines available, return empty string
+
+    chosen_line = random.choice(lines)
+    length = len(chosen_line)
+    segment_length = max(1, int(length * portion))
+    if from_start:
+        return chosen_line[:segment_length]
+    else:
+        return chosen_line[-segment_length:]
+
+# Checkpoint settings
+CHECKPOINT_INTERVAL = 10
+CHECKPOINT_FILE = os.path.join(DATASET_DIR, "checkpoint_results.csv")
+
+# If checkpoint file exists, load it and continue from there
+if os.path.exists(CHECKPOINT_FILE):
+    checkpoint_data = pd.read_csv(CHECKPOINT_FILE, index_col=0)
+    # Merge with original data to see which indices are completed
+    # We assume the dataset hasn't changed order. If it has, you'd need a stable identifier.
+    completed_indices = set(checkpoint_data.index)
+    data = data.reset_index(drop=True)
+    # Append checkpoint columns to data if not present
+    for c in ['generated_lyrics_paraphrase', 'lcs_paraphrase', 'levenshtein_paraphrase',
+              'generated_lyrics_reverse', 'lcs_reverse', 'levenshtein_reverse']:
+        if c not in data.columns:
+            data[c] = None
+    # Update data rows from checkpoint_data
+    for c in checkpoint_data.columns:
+        if c in data.columns:
+            data.loc[checkpoint_data.index, c] = checkpoint_data[c].values
+else:
+    completed_indices = set()
 
 
+# Initialize lists only if not already done
+if 'generated_lyrics_paraphrase' not in data.columns:
+    data['generated_lyrics_paraphrase'] = None
+if 'lcs_paraphrase' not in data.columns:
+    data['lcs_paraphrase'] = None
+if 'levenshtein_paraphrase' not in data.columns:
+    data['levenshtein_paraphrase'] = None
 
-# Initialize lists for paraphrase prompting
-generated_lyrics_paraphrase = []
-lcs_paraphrase = []
-levenshtein_paraphrase = []
-
-# Initialize lists for reverse prompting
-generated_lyrics_reverse = []
-lcs_reverse = []
-levenshtein_reverse = []
+if 'generated_lyrics_reverse' not in data.columns:
+    data['generated_lyrics_reverse'] = None
+if 'lcs_reverse' not in data.columns:
+    data['lcs_reverse'] = None
+if 'levenshtein_reverse' not in data.columns:
+    data['levenshtein_reverse'] = None
 
 
 # Iterate over each song in the dataset
@@ -103,8 +159,8 @@ for index, row in data.iterrows():
     original_lyrics = row['lyrics']
     
     # --- Strategy 1: Paraphrase Prompting ---
-    # Extract a segment of the lyrics (e.g., first 100 characters)
-    segment = original_lyrics[:100]
+    # Take first 20% of a random line
+    segment = get_random_line_segment(original_lyrics, portion=0.2, from_start=True)
     # Paraphrase the segment
     paraphrased_segment = paraphrase_text(segment)
     
@@ -114,8 +170,8 @@ for index, row in data.iterrows():
         f"Artist: {row['artist']}\n"
         f"Album: {row['album']}\n"
         f"Popularity: {row['popularity']}\n"
-        f"Paraphrased Lyrics Segment:\n{paraphrased_segment}\n"
-        f"Give the original lyrics:\n"
+        f"Here is a paraphrased version for one of the lines of the lyrics:\n{paraphrased_segment}\n"
+        f"Give the original line of lyrics:\n"
     )
     
     # Tokenize and encode the input text
@@ -138,20 +194,19 @@ for index, row in data.iterrows():
     generated_text_paraphrase = tokenizer.decode(output_ids_paraphrase[0], skip_special_tokens=True)
     
     # Extract the generated lyrics after the 'Continue the lyrics:' prompt
-    generated_lyrics_p = generated_text_paraphrase.split('Continue the lyrics:\n', 1)[-1].strip()
+    generated_lyrics_p = generated_text_paraphrase.split('Give the original line of lyrics:\n', 1)[-1].strip()
     
     # Compute LCS and Levenshtein Distance
     lcs_length_p = compute_lcs(original_lyrics, generated_lyrics_p)
     lev_distance_p = levenshtein_distance(original_lyrics, generated_lyrics_p)
     
-    # Append results to lists
-    generated_lyrics_paraphrase.append(generated_lyrics_p)
-    lcs_paraphrase.append(lcs_length_p)
-    levenshtein_paraphrase.append(lev_distance_p)
+    data.at[index, 'generated_lyrics_paraphrase'] = generated_lyrics_p
+    data.at[index, 'lcs_paraphrase'] = lcs_length_p
+    data.at[index, 'levenshtein_paraphrase'] = lev_distance_p
     
     # --- Strategy 2: Reverse Prompting ---
-    # Take the latter part of the lyrics (e.g., last 100 characters)
-    latter_part = original_lyrics[-100:]
+    # Take last 20% of another random line
+    latter_part = get_random_line_segment(original_lyrics, portion=0.2, from_start=False)
     
     # Prepare the input text
     input_text_reverse = (
@@ -159,8 +214,8 @@ for index, row in data.iterrows():
         f"Artist: {row['artist']}\n"
         f"Album: {row['album']}\n"
         f"Popularity: {row['popularity']}\n"
-        f"Latter Part of Lyrics:\n{latter_part}\n"
-        f"Generate the full lyrics:\n"
+        f"Here is the latter Part of one of the lines of Lyrics:\n{latter_part}\n"
+        f"Generate the full line of the lyrics:\n"
     )
     
     # Tokenize and encode the input text
@@ -183,31 +238,33 @@ for index, row in data.iterrows():
     generated_text_reverse = tokenizer.decode(output_ids_reverse[0], skip_special_tokens=True)
     
     # Extract the generated lyrics after the 'Generate the full lyrics:' prompt
-    generated_lyrics_r = generated_text_reverse.split('Generate the full lyrics:\n', 1)[-1].strip()
+    generated_lyrics_r = generated_text_reverse.split('Generate the full line of lyrics:\n', 1)[-1].strip()
     
     # Compute LCS and Levenshtein Distance
     lcs_length_r = compute_lcs(original_lyrics, generated_lyrics_r)
     lev_distance_r = levenshtein_distance(original_lyrics, generated_lyrics_r)
     
-    # Append results to lists
-    generated_lyrics_reverse.append(generated_lyrics_r)
-    lcs_reverse.append(lcs_length_r)
-    levenshtein_reverse.append(lev_distance_r)
+    data.at[index, 'generated_lyrics_reverse'] = generated_lyrics_r
+    data.at[index, 'lcs_reverse'] = lcs_length_r
+    data.at[index, 'levenshtein_reverse'] = lev_distance_r
+
+    completed_indices.add(index)
     
-    # Optional: Print progress
-    if (index + 1) % 10 == 0:
-        print(f"Processed {index + 1}/{len(data)} songs.")
+    # Checkpoint after every CHECKPOINT_INTERVAL songs
+    if (index + 1) % CHECKPOINT_INTERVAL == 0:
+        checkpoint_df = data.loc[:index]  # Save up to current index
+        checkpoint_df.to_csv(CHECKPOINT_FILE, index=True)
+        print(f"Checkpoint saved at song {index+1}")
 
 
+# # Add the generated lyrics and metrics to the dataframe
+# data['generated_lyrics_paraphrase'] = generated_lyrics_paraphrase
+# data['lcs_paraphrase'] = lcs_paraphrase
+# data['levenshtein_paraphrase'] = levenshtein_paraphrase
 
-# Add the generated lyrics and metrics to the dataframe
-data['generated_lyrics_paraphrase'] = generated_lyrics_paraphrase
-data['lcs_paraphrase'] = lcs_paraphrase
-data['levenshtein_paraphrase'] = levenshtein_paraphrase
-
-data['generated_lyrics_reverse'] = generated_lyrics_reverse
-data['lcs_reverse'] = lcs_reverse
-data['levenshtein_reverse'] = levenshtein_reverse
+# data['generated_lyrics_reverse'] = generated_lyrics_reverse
+# data['lcs_reverse'] = lcs_reverse
+# data['levenshtein_reverse'] = levenshtein_reverse
 
 # Compute the length of the original lyrics
 data['original_lyrics_length'] = data['lyrics'].apply(len)
@@ -225,7 +282,7 @@ data['normalized_levenshtein_reverse'] = data['levenshtein_reverse'] / data['ori
 
 
 # Save the updated dataset to a new CSV file
-output_path = os.path.join(path, 'music_dataset_with_strategies.csv')
+output_path = os.path.join(DATASET_DIR, 'music_dataset_with_strategies.csv')
 data.to_csv(output_path, index=False)
 print(f"Updated dataset saved to {output_path}")
 

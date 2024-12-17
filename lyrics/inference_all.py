@@ -11,6 +11,9 @@ import nltk
 import random
 import openai
 from openai import OpenAI
+torch.cuda.empty_cache()
+torch.cuda.ipc_collect()
+
 
 client = OpenAI()
 nltk.download('punkt')
@@ -57,7 +60,7 @@ for col in required_columns:
     data[col] = data[col].apply(clean_text)
 
 data = data.reset_index(drop=True)
-data = data.iloc[289:]
+data = data.iloc[380:]
 
 # Load the tokenizer
 tokenizer = LlamaTokenizer.from_pretrained('fine-tuned-llama')
@@ -68,10 +71,14 @@ model = LlamaForCausalLM.from_pretrained(
     'fine-tuned-llama',
     device_map='auto',
     torch_dtype=torch.float16,
+    # load_in_8bit=True
+    # offload_folder="offload_dir",
+    # trust_remote_code=True,
+    # low_cpu_mem_usage=True
 )
 model.eval()
 
-# Move model to GPU if available
+# # Move model to GPU if available
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
@@ -288,7 +295,7 @@ print(f"Updated dataset saved to {output_path}")
 
 
 # Compute the length of the original lyrics
-data['original_lyrics_length'] = data['lyrics'].apply(len)
+data['original_lyrics_length'] = data['lyrics'].apply(len) 
 
 # Avoid division by zero
 data = data[data['original_lyrics_length'] > 0]

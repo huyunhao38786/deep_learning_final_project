@@ -72,7 +72,7 @@ texts = data['text'].tolist()
 dataset = Dataset.from_dict({'text': texts})
 
 # Load the tokenizer
-tokenizer = LlamaTokenizer.from_pretrained('meta-llama/Llama-2-7b-hf')
+tokenizer = LlamaTokenizer.from_pretrained('meta-llama/Llama-2-13b-hf')
 
 # If tokenizer doesn't have a pad token, add it
 tokenizer.pad_token = tokenizer.eos_token
@@ -96,7 +96,7 @@ data_collator = DataCollatorForLanguageModeling(
 
 # Load the model in 8-bit precision
 model = LlamaForCausalLM.from_pretrained(
-    'meta-llama/Llama-2-7b-hf',
+    'meta-llama/Llama-2-13b-hf',
     load_in_8bit=True,
     device_map='auto',
 )
@@ -116,7 +116,7 @@ model.print_trainable_parameters()
 
 
 training_args = TrainingArguments(
-    output_dir='./results',
+    output_dir='./results-13b',
     per_device_train_batch_size=1,
     gradient_accumulation_steps=16,
     num_train_epochs=3,
@@ -141,6 +141,6 @@ trainer = Trainer(
 trainer.train()
 
 # Save the model and tokenizer
-model.save_pretrained('fine-tuned-llama')
-tokenizer.save_pretrained('fine-tuned-llama')
+model.save_pretrained('fine-tuned-llama-13b')
+tokenizer.save_pretrained('fine-tuned-llama-13b')
 

@@ -1,0 +1,17 @@
+lyrics/results-13b/checkpoint-147/adapter_config.json
+lyrics/results-13b/checkpoint-147/adapter_model.safetensors
+lyrics/results-13b/checkpoint-147/optimizer.pt
+lyrics/results-13b/checkpoint-147/README.md
+lyrics/results-13b/checkpoint-147/rng_state.pth
+lyrics/results-13b/checkpoint-147/scheduler.pt
+lyrics/results-13b/checkpoint-147/special_tokens_map.json
+lyrics/results-13b/checkpoint-147/tokenizer_config.json
+lyrics/results-13b/checkpoint-147/tokenizer.model
+lyrics/results-13b/checkpoint-147/trainer_state.json
+lyrics/results-13b/checkpoint-147/training_args.bin
+lyrics/fine-tuned-llama-13b/adapter_config.json
+lyrics/fine-tuned-llama-13b/adapter_model.safetensors
+lyrics/fine-tuned-llama-13b/README.md
+lyrics/fine-tuned-llama-13b/special_tokens_map.json
+lyrics/fine-tuned-llama-13b/tokenizer_config.json
+lyrics/fine-tuned-llama-13b/tokenizer.model
